@@ -1,0 +1,39 @@
+# Drop this in SuperInstance/git.pp-doctor/.github/workflows/conformance.yml
+# Python port — the conformance runner supports a Python wrapper
+
+name: conformance
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: SuperInstance/gitpp-conformance
+          path: conformance
+      - uses: actions/checkout@v4
+        with:
+          repository: SuperInstance/git.pp-doctor
+          path: doctor
+      - name: Run the conformance runner against git.pp-doctor
+        run: |
+          cd conformance
+          # Wrap the doctor's `check` subcommand as the conformance runner expects
+          cat > wrapper.sh <<'EOF'
+          #!/bin/bash
+          # Take records from stdin, run the doctor, parse the output
+          RECORDS=$(cat)
+          echo "$RECORDS" > /tmp/records.json
+          python3 ../doctor/gitpp_doctor.py check /tmp/records.json --at task-c
+          EOF
+          chmod +x wrapper.sh
+          for case in cases/*/*.json; do
+            echo "=== $case ==="
+            cp "$case" /tmp/case.json
+            bash wrapper.sh < /tmp/case.json
+          done

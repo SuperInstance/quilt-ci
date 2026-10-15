@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Clone the public conformance corpus
+        uses: actions/checkout@v4
+        with:
+          repository: SuperInstance/gitpp-conformance
+          path: conformance
+
+      - name: Run the conformance runner
+        run: |
+          cd conformance
+          node runner.mjs ../src/index.js
+
+      - name: Create a GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          # If you have artifacts to attach, list them here
+          # files: |
+          #   dist/*.js
+          #   dist/*.map

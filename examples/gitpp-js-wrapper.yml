@@ -1,0 +1,16 @@
+# Drop this in SuperInstance/gitpp-js/.github/workflows/conformance.yml
+# (the central workflow is reusable; this is the calling wrapper)
+
+name: conformance
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  conformance:
+    uses: SuperInstance/quilt-ci/.github/workflows/conformance.yml@main
+    with:
+      port-path: ./src
+      port-entry: gitpp.js
