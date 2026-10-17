@@ -1,0 +1,110 @@
+name: conformance
+
+on:
+  # A REUSABLE WORKFLOW MUST DECLARE workflow_call. Without this the
+  # `uses:` reference in a port repo cannot resolve, and GitHub reports
+  # the run as a failure with ZERO JOBS -- no error, no steps, no
+  # explanation. That is what every port that called this was getting.
+  workflow_call:
+    inputs:
+      language:
+        required: false
+        type: string
+        default: ""
+      runner:
+        required: false
+        type: string
+        default: "ubuntu-latest"
+      install:
+        required: false
+        type: string
+        default: ""
+      conformance_script:
+        required: true
+        type: string
+        description: >-
+          The script that runs the conformance check for this port. It
+          runs with the port checked out at ./port and the public corpus
+          already cloned at ./conformance.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: port
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the port's own dependencies
+        # The port supplies this. A reusable workflow that cannot install
+        # a port's dependencies is not reusable in any useful sense.
+        if: ${{ inputs.install != '' }}
+        run: ${{ inputs.install }}
+
+      - name: Clone the public conformance corpus
+        uses: actions/checkout@v4
+        with:
+          repository: SuperInstance/gitpp-conformance
+          path: conformance
+
+      - name: Run the conformance runner against this port
+        id: run
+        working-directory: port
+        # The port's OWN script runs. The previous version of this
+        # workflow ignored `inputs.conformance_script` entirely and ran a
+        # hardcoded `node runner.mjs` instead, so a caller that supplied
+        # a script had it silently ignored -- and the script the caller
+        # supplied was the only thing that knew how to drive a CLI-based
+        # port.
+        #
+        # The output is teed so the PR comment can show it, and the exit
+        # code is preserved: a conformance run that fails must FAIL the
+        # build. `| tee` would otherwise mask it.
+        run: |
+          set -o pipefail
+          ${{ inputs.conformance_script }} 2>&1 | tee ../conformance/conformance-output.txt
+        continue-on-error: false
+
+      - name: Post the result as a PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: conformance
+          message: |
+            ```
+            $(cat conformance/conformance-output.txt)
+            ```
+
+# A NOTE ON THE ENTRY POINT
+#
+# There used to be a second job here:
+#
+#   call-workflow-conformance:
+#     uses: ./.github/workflows/conformance.yml
+#
+# which called THIS SAME FILE. Once the file lives at
+# .github/workflows/conformance.yml, that is infinite recursion and
+# GitHub rejects it. The entry point is the `on: workflow_call` trigger
+# above, and a port repo calls it with:
+#
+#   jobs:
+#     conformance:
+#       uses: SuperInstance/quilt-ci/.github/workflows/conformance.yml@main
+#       with:
+#         conformance_script: |
+#           ...

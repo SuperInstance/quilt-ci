@@ -10,23 +10,22 @@
 
 ## Use it
 
-In your port repo (e.g. `SuperInstance/gitpp-foo`):
+The workflows live in `.github/workflows/` so that the `uses:` reference
+below resolves. They used to sit at the repository ROOT, which meant the
+reusable reference pointed at a path that did not exist -- and GitHub
+reports that as **a failure with zero jobs**: no error, no steps, no
+explanation.
 
-```bash
-mkdir -p .github/workflows
-curl -sS https://raw.githubusercontent.com/SuperInstance/quilt-ci/main/conformance.yml > .github/workflows/conformance.yml
-curl -sS https://raw.githubusercontent.com/SuperInstance/quilt-ci/main/bench.yml > .github/workflows/bench.yml
-```
-
-Then add a small wrapper that tells the workflow where your port is:
+In your port repo (e.g. `SuperInstance/gitpp-foo`), add a small wrapper:
 
 ```yaml
 # .github/workflows/conformance.yml (your copy)
 name: conformance
 on: [push, pull_request]
 jobs:
-  test:
+  conformance:
     uses: SuperInstance/quilt-ci/.github/workflows/conformance.yml@main
+    secrets: inherit
     with:
       port-path: ./src
       port-command: node src/index.js
