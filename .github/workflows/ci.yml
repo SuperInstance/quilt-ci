@@ -12,3 +12,5 @@ jobs:
         with:
           node-version: '22'
       - run: node --test "test/*.test.mjs"
+      - name: every documented `uses:` path must resolve
+        run: python3 check-workflow-paths.py
