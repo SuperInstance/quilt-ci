@@ -10,8 +10,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,4 +87,93 @@ test('THE GUARD CAN FAIL — a deliberately broken package makes it go red', () 
     assert.equal(r.code, 1, 'after the mutation the guard MUST go red');
     assert.match(r.out, /FAIL/);
   } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+// --- the --strict arm was never tested, and it was broken ------------------
+//
+// `--strict` referenced an undeclared `uc`, so every strict run raised a
+// ReferenceError BEFORE the probe ran: it failed on every package, healthy
+// ones included, with a blank message. Wired into `prepublishOnly` as it
+// stood, it would have blocked the entire fleet. And the suite never
+// passed --strict, so nothing noticed.
+//
+// These are the tests that should have existed.
+
+// npm's CLI is broken in some sandboxes (an errno -122 on close, which
+// kills every `npm install` including a trivial one). The strict arm
+// shells out to npm, so in such a sandbox it CANNOT be exercised.
+//
+// A skip here must be LOUD. A silently-skipped test is a green badge over
+// a test that did not happen -- which is the fleet's own signature defect.
+// The probe must do what the guard does: install a TARBALL. A plain
+// `npm install` of a dependency-free package can succeed in an
+// environment where installing a local tarball dies (npm's errno -122 on
+// close). Probing the wrong thing would make the skip fire where the
+// guard would actually work.
+const NPM_WORKS = (() => {
+  const d = mkdtempSync(join(tmpdir(), 'npm-canary-'));
+  try {
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'npm-canary', version: '1.0.0', main: './index.js' }));
+    writeFileSync(join(d, 'index.js'), 'module.exports = {};\n');
+    const pack = spawnSync('npm', ['pack', '--pack-destination', d], { cwd: d, encoding: 'utf8' });
+    if (pack.status !== 0) return false;
+    const tgz = readdirSync(d).find((f) => f.endsWith('.tgz'));
+    if (!tgz) return false;
+    const c2 = mkdtempSync(join(tmpdir(), 'npm-canary2-'));
+    try {
+      writeFileSync(join(c2, 'package.json'), JSON.stringify({ name: 'npm-canary-consumer', version: '1.0.0' }));
+      const r = spawnSync('npm', ['install', join(d, tgz), '--no-audit', '--no-fund', '--userconfig', '/dev/null'],
+        { cwd: c2, encoding: 'utf8' });
+      return r.status === 0;
+    } finally { rmSync(c2, { recursive: true, force: true }); }
+  } catch { return false; } finally { rmSync(d, { recursive: true, force: true }); }
+})();
+if (!NPM_WORKS) {
+  console.log('  NOTE: npm cannot install in this environment, so the --strict arm ' +
+              'CANNOT be exercised here. The two --strict tests are SKIPPED, not passed.');
+}
+
+test('--strict works on a HEALTHY package', { skip: !NPM_WORKS && 'npm cannot install in this environment' }, () => {
+  // A canary that exports something and has a real dist/.
+  const dir = mkdtempSync(join(tmpdir(), 'guard-strict-'));
+  try {
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'guard-strict-canary', version: '1.0.0',
+      main: './dist/index.js', types: './dist/index.d.ts',
+    }));
+    writeFileSync(join(dir, 'dist', 'index.js'), 'module.exports = { hello: () => "hi" };\n');
+    writeFileSync(join(dir, 'dist', 'index.d.ts'), 'export declare function hello(): string;\n');
+    const r = spawnSync('node', [GUARD, dir, '--strict'], { encoding: 'utf8' });
+    assert.notEqual(r.status, 1,
+      '--strict must NOT fail a healthy package: ' + (r.stdout || '') + (r.stderr || ''));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('--strict FAILS a package whose entry point does not load', { skip: !NPM_WORKS && 'npm cannot install in this environment' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'guard-strict-bad-'));
+  try {
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'guard-strict-bad', version: '1.0.0', main: './dist/index.js',
+    }));
+    // the file exists but THROWS on load -- the install-is-fine, use-fails case
+    writeFileSync(join(dir, 'dist', 'index.js'), 'throw new Error("boom at import time");\n');
+    const r = spawnSync('node', [GUARD, dir, '--strict'], { encoding: 'utf8' });
+    assert.equal(r.status, 1, '--strict must fail a package that throws on load');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the guard does not ignore dist/, because npm SHIPS dist/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'guard-dist-'));
+  try {
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'guard-dist-canary', version: '1.0.0', main: './dist/index.js',
+    }));
+    writeFileSync(join(dir, 'dist', 'index.js'), 'module.exports = {};\n');
+    const r = spawnSync('node', [GUARD, dir], { encoding: 'utf8' });
+    assert.ok(!/NOT IN THE TARBALL/.test(r.stdout || ''),
+      'a package shipping dist/index.js must not be reported as missing it');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

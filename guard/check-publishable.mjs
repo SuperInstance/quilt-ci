@@ -75,7 +75,13 @@ import { readdirSync, statSync } from 'node:fs';
 const DEFAULT_IGNORE = [
   /(^|[\\/])\.git([\\/]|$)/, /(^|[\\/])\.npmrc$/, /(^|[\\/])\.DS_Store$/,
   /(^|[\\/])node_modules([\\/]|$)/, /\.orig$/, /\.rej$/, /(^|[\\/])\.npmignore$/,
-  /(^|[\\/])\.gitignore$/, /(^|[\\/])\.github([\\/]|$)/, /(^|[\\/])dist([\\/]|$)/,
+  /(^|[\\/])\.gitignore$/, /(^|[\\/])\.github([\\/]|$)/,
+  // NOTE: `dist/` is NOT ignored here, because npm SHIPS dist/. The
+  // previous version of this list excluded it, which made the guard
+  // report a healthy package's `types` as "NOT IN THE TARBALL" --
+  // false-failing most of the fleet. npm's own always-excluded set is
+  // .git, node_modules, .npmrc, .DS_Store, .npmignore, .gitignore,
+  // *.orig, *.rej and lockfiles. Anything else a package ships, it ships.
 ];
 
 const toRegex = (glob) => {
@@ -203,6 +209,11 @@ if (strict) {
   try {
     execFileSync('npm', ['init', '-y'], { cwd: cons, stdio: 'ignore' });
     const instArgs = ['install', tarball, '--no-audit', '--no-fund'];
+    // `uc` WAS NEVER DECLARED. Every --strict run raised a ReferenceError
+    // before the probe even started, so --strict failed on EVERY package --
+    // healthy ones included -- with a blank message. Wired into
+    // prepublishOnly as it stood, it would have blocked the entire fleet.
+    const uc = process.env.NPM_USERCONFIG;
     if (uc && existsSync(uc)) instArgs.push('--userconfig', uc);
     execFileSync('npm', instArgs, { cwd: cons, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
     const name = manifest.name;
