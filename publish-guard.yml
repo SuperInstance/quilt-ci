@@ -1,0 +1,60 @@
+# publish-guard -- would a CONSUMER be able to use this package?
+#
+# WHY THIS EXISTS. A measurement over 455 published versions across 161
+# packages found 131 (28.8%) declaring an entry point the package does not
+# ship, and 12 (7.5%) whose require() provably throws. The pattern: NO
+# PACKAGE HERE TESTS THE ARTIFACT IT PUBLISHES. The suite passes, the
+# build is green, the package installs cleanly -- and then require()
+# throws, because the install is the happy path and the use is the failure.
+#
+# This turns that class from "a consumer finds it" into "the build fails".
+#
+# Usage, in a consuming repo's .github/workflows/ci.yml:
+#
+#   - uses: SuperInstance/quilt-ci/.github/workflows/publish-guard.yml@main
+#     with:
+#       package-dir: .
+#
+# Or locally, before publishing:
+#
+#   node ../quilt-ci/guard/check-publishable.mjs . --strict
+#
+# The guard is NOT `npm pack`. npm's pack is not reliable enough to be a
+# gate -- in this fleet it dies with an errno -122 on close and leaves no
+# tarball -- so the file selection is done by the guard itself, following
+# npm-packlist's rules. The report says so.
+
+name: publish-guard
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: 'the package directory to check'
+        required: false
+        default: '.'
+      strict:
+        description: 'also install the packed tarball and require() it (needs the network)'
+        required: false
+        default: false
+      node-version:
+        required: false
+        default: '22'
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: package
+      - uses: actions/checkout@v4
+        with:
+          repository: SuperInstance/quilt-ci
+          path: quilt-ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: the published artifact must be usable
+        run: |
+          node quilt-ci/guard/check-publishable.mjs "package/${{ inputs.package-dir }}" ${{ inputs.strict && '--strict' || '' }}
