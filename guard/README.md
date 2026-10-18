@@ -7,8 +7,8 @@ version fetched, zero errors) found:
 
 | | count | share |
 |---|---|---|
-| versions declaring an entry point the package does not ship | **131** | 28.8% |
-| **`require()` that provably throws** | **12** | 7.5% |
+| versions declaring an entry point the package does not ship | **36** | 8.8% |
+| **`require()` that provably throws** | **40 packages** | across 15 packages |
 | `require()` OK but no `types` (TypeScript TS7016) | 18 | reported separately |
 | not Node packages | 14 | excluded |
 
