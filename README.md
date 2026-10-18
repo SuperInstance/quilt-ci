@@ -2,11 +2,24 @@
 
 > A reusable set of GitHub Actions workflows for any git.pp port repo. Drop them in `.github/workflows/` and you get a conformance check, a benchmark, and a release workflow — all maintained centrally.
 
-## What's in it
+## What's in it, and where it lives
 
-- **`conformance.yml`** — runs the public conformance corpus (`SuperInstance/gitpp-conformance`) against your port on every push and PR.
-- **`bench.yml`** — runs the benchmark suite (`SuperInstance/gitpp-bench`) on every push to main. Posts a comment to the PR with the mean / p50 / p99 numbers.
-- **`release.yml`** — when you tag a version (e.g. `v0.2.0`), runs the conformance one more time, then if green, creates a GitHub release with the pre-built artifacts.
+These three files do **different** jobs, and they live in **different places** for a reason.
+
+| file | role | where it lives |
+|---|---|---|
+| `conformance.yml` | a **reusable workflow** — called by a port repo with `uses:` | `.github/workflows/` |
+| `bench.yml` | a **template** — copied into a port repo | the repository root |
+| `release.yml` | a **template** — copied into a port repo | the repository root |
+
+The distinction is not cosmetic.
+
+- A **reusable workflow** must live in `.github/workflows/`, because that is the path a `uses:` reference resolves to. The reference every caller writes is
+  `uses: SuperInstance/quilt-ci/.github/workflows/conformance.yml@main`
+  so that is where the file has to be.
+- The two **templates** are copied into a port repo and run *there*, against *that* repo's port. Run in `quilt-ci` itself they have no port to benchmark and no port to release, so they fail — and a permanently red workflow in this repo is a permanently red badge that teaches you to ignore red.
+
+All three were at the repository root at first, which is why the reusable reference resolved to nothing.
 
 ## Use it
 
